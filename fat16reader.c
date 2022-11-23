@@ -9,21 +9,6 @@
 #include <stdlib.h>
 #include <stddef.h>
 
-// #define FIELDSIZE 8
-// #define RECORDS 5
-
-// typedef struct
-// {
-//     long field1;
-//     int field2;
-//     char field3[FIELDSIZE];
-// } Record;
-
-// Record srcArray[] = 
-// {
-//     {1111, 2222, "aaaaaaa"},
-//     {5555, 6666, "bbbbbbb"}
-// };
 
 typedef struct __attribute__((__packed__)) 
 {
@@ -49,34 +34,38 @@ typedef struct __attribute__((__packed__))
 	uint8_t		BS_FilSysType[ 8 ];	// = 'FAT16   ' (Not 0 term.)
 } BootSector;
 
-int Fopen(int fd)
+int Fileopen()
 {
     //int fd = open("fat16.img",O_RDONLY); //USE THIS WHEN TESTING ACTUAL WORK
-    fd = open("skeleon.txt",O_RDONLY);
-    if(fd == -1)
+    int fd = open("skeleton.txt",O_RDONLY);
+    if(fd < 0)
     {
         printf("FILE CANNOT OPEN\n");
         return 1;
     }
-    printf("FILE WAS OPENED\n");
-    return fd;
+    else
+    {
+        printf("FILE WAS OPENED\n");
+        return fd;
+    }      
 }
 
-int Foffset(int fd)
+int Fileoffset(int fd)
 {
-    //printf("%i", fd);
-    int fOffset = 5;
-    fOffset = lseek(fd, 0, SEEK_SET); //SECOND NUMBER IS THE AMOUNT OF SPACES I WANT TO MOVE OUT
+    int fOffset = lseek(fd, 0, SEEK_SET); //SECOND NUMBER IS THE AMOUNT OF SPACES I WANT TO MOVE OUT
     if (fOffset == -1)
     {
         printf("FILE CANNOT OFFSET\n");
         return 1;
     }
-    printf("FILE WAS OFFSET\n");
-    return fOffset;
+    else
+    {
+        printf("FILE WAS OFFSET\n");
+        return fOffset;
+    }
 }
 
-int Fread(int fd, void *ptr, size_t count)
+int Fileread(int fd, void *ptr, size_t count)
 {
     //memcpy(text, *BootSector, sizeof(struct BootSector));
     //while (count != 30)
@@ -95,7 +84,7 @@ int Fread(int fd, void *ptr, size_t count)
 //     //printf("%s", *text);
 // }
 
-int Fclose(int fd)
+int Fileclose(int fd)
 {
     close(fd);
     printf("FILE WAS CLOSED\n");
@@ -105,12 +94,13 @@ int Fclose(int fd)
 //MAIN
 int main()
 {
-    //read
-    int fd;
-    Fopen(fd);
+    //OPEN
+    int fd = Fileopen();
 
-    int fOffset;
-    fOffset == Foffset(fd);
+    //OFFSET
+    int offset = Fileoffset(fd);
+
+    //READ
 
     char something[50];
     char text;
