@@ -4,7 +4,6 @@
 //http://www.maverick-os.dk/FileSystemFormats/FAT16_FileSystem.html
 
 
-
 //DEFINES
 #include <stdio.h>
 #include <sys/types.h>
@@ -54,17 +53,7 @@ typedef struct __attribute__((__packed__))
     uint16_t    DIR_WrtDate;        // Date of last write
     uint16_t    DIR_FstClusLO;      // Lower 16 bits file's 1st cluster
     uint32_t    DIR_FileSize;       // File size in bytes
-} Fat16State;
-
-typedef struct __attribute__((__packed__))
-{
-    unsigned long fatStart;
-    unsigned long dataStart;
-    unsigned char clusterSize;
-    unsigned short currentCluster;
-    unsigned long bytesUnreadCluster;
-    unsigned long bytesUnreadFile;
-} Fat16State;
+} EntryInDirectory;
 
 #define fatBufferSize 32
 
@@ -99,20 +88,19 @@ int Fileoffset(int fd, int offset)
     }
 }
 
-int Fileread(int fd, void *ptr, size_t count)
+void Fileread(int fd, void *ptr, size_t count)
 {
     read(fd, ptr, count);   //count-1????
-    return ptr;
+    //return ptr;
 }
 
 void BSprint(BootSector *ptr)
 {
-    for (int i = 0; i<sizeof(BootSector); i++)
-    {
-        printf("%s", ptr[i]);
-    }
+    // for (int i = 0; i<sizeof(BootSector); i++)
+    // {
+    //     printf("%s", ptr[i]);
+    // }
 
-    printf("\n");
     printf("BytsPerSec: %i\n", ptr ->BPB_BytsPerSec);
     printf("SecPerClus: %i\n", ptr ->BPB_SecPerClus);
     printf("RsvdSecCnt: %i\n", ptr ->BPB_RsvdSecCnt); //number of reserved sectors
@@ -122,9 +110,32 @@ void BSprint(BootSector *ptr)
     printf("FATSz16: %i\n", ptr ->BPB_FATSz16);
     printf("TotSec32: %i\n", ptr ->BPB_TotSec32);
     
+    printf("VolLab: ");
     for (int i = 0; i<11; i++)
     {
-        printf("VolLab: %c\n", ptr ->BS_VolLab[i]);
+        printf("%c", ptr ->BS_VolLab[i]);
+    }
+    printf("\n");
+}
+
+void RDprint(EntryInDirectory *ptr)
+{
+    if (ptr->DIR_Name[0] == 0)
+    {
+        printf("No further valid entries");
+    }
+    else if (ptr->DIR_Name[0] == 0xE5)
+    {
+        printf("Specific entry is currently unused and should be ignored, perhaps due to deleted file");
+    }
+    else if(ptr->DIR_Attr)
+    {
+        printf("boopy");
+    }
+    else 
+    {
+        printf("%i\n", ptr ->DIR_FileSize);
+        printf("splooge");
     }
 }
 
@@ -141,23 +152,95 @@ int main()
     //OPEN
     int fd = Fileopen();
 
-    int offset = 0; //change value to change offset
     //OFFSET
-    int foffset = Fileoffset(fd, offset);
+    //int offset = 3; //change value to change offset
+    //int foffset = Fileoffset(fd, offset);
 
     //READ
     BootSector* bp = malloc(sizeof(BootSector));
-    size_t count = sizeof(BootSector);
-    Fileread(fd, bp, count);
+    size_t bsSize = sizeof(BootSector);
+    Fileread(fd, bp, bsSize);
 
     //BOOTSECTOR PRINT
     BSprint(bp);
-    size_t fatsize = bp->BPB_BytsPerSec * bp->BPB_FATSz16;
-    uint16_t fat[fatsize/2];
-    Fileread(fd, &fat, fatsize);
 
-    while(fatsize > 0 && *fat != 0xFFFF)
+    //RESERVED SECTORS
+    uint16_t fatReserveOffset = (bp->BPB_RsvdSecCnt * bp->BPB_BytsPerSec);
+    Fileoffset(fd, fatReserveOffset);
 
+    //FAT[N]
+    int startsize;
+    int ess = 0;
+    while (ess == 0)
+    {
+        printf("Enter an integer: ");
+        scanf("%i", &startsize);
+        if (startsize >= 0xFFF8)
+        {
+            printf("Number must be less than 65528\n");
+        }
+        else
+        {
+            ess = 1;
+        }
+    }
+
+    uint16_t fatsize = (bp->BPB_BytsPerSec * bp->BPB_FATSz16);
+    uint16_t fat[fatsize];
+    Fileread(fd, fat, fatsize);
+
+    uint16_t ent = 0;
+
+    for (int i=0; i<fatsize; i++)
+    {
+        if (fat[i] == startsize)
+        {
+            ent = i;
+            //printf("%i\n", ent);
+            break;
+        }
+    }
+
+    uint16_t sz = startsize;
+
+    while(fat[sz] < 0xFFF8)
+    {
+        printf("%i\n", fat[sz]);
+        sz = fat[sz];
+    }
+
+    //ROOT DIRECTORY
+    uint16_t firstSectorRD = bp->BPB_RsvdSecCnt + bp->BPB_NumFATs * bp->BPB_FATSz16;
+
+    EntryInDirectory* eid = malloc(sizeof(EntryInDirectory));
+    size_t eidSize = sizeof(EntryInDirectory);
+    Fileread(fd, eid, eidSize);
+    Fileoffset(fd, firstSectorRD);
+    
+    RDprint(eid);
+
+
+
+
+
+
+
+
+
+
+
+
+    // printf("%li\n", firstSector);
+
+    // //uint16_t directory[malloc(sizeof(Directory))];
+    // EntryInDirectory dir[12];
+    // Fileread(fd, &dir, 12);
+    // for (int i=0; i<12; i++)
+    // {
+    //     printf("%i\n", dir->DIR_Attr);
+    // }
+    // int padding = 0x20;
+    
     //CLOSE
     Fileclose(fd);
 }
