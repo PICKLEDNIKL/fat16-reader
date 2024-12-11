@@ -1,16 +1,9 @@
-//USE HEXED.IT to see what im supposed to be reading
-
-//https:codeandlife.com/2012/04/07/simple-fat-and-sd-tutorial-part-2/
-//http://www.maverick-os.dk/FileSystemFormats/FAT16_FileSystem.html
-
-
-//DEFINES
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <stdint.h> //uint8_t
+#include <stdint.h>
 #include <string.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -55,12 +48,21 @@ typedef struct __attribute__((__packed__))
     uint32_t    DIR_FileSize;       // File size in bytes
 } EntryInDirectory;
 
-#define fatBufferSize 32
+typedef struct __attribute__((__packed__))
+{
+    uint8_t LDIR_Ord; // Order/ position in sequence/ set
+    uint8_t LDIR_Name1[ 10 ]; // First 5 UNICODE characters
+    uint8_t LDIR_Attr; // = ATTR_LONG_NAME (xx001111)
+    uint8_t LDIR_Type; // Should = 0
+    uint8_t LDIR_Chksum; // Checksum of short name
+    uint8_t LDIR_Name2[ 12 ]; // Middle 6 UNICODE characters
+    uint16_t LDIR_FstClusLO; // MUST be zero
+    uint8_t LDIR_Name3[ 4 ]; // Last 2 UNICODE characters
+} LongDirectoryEntry;
 
 int Fileopen()
 {
-    int fd = open("fat16.img",O_RDONLY); //USE THIS WHEN TESTING ACTUAL WORK
-    //int fd = open("skeleton.txt",O_RDONLY);
+    int fd = open("fat16.img",O_RDONLY);
     if(fd < 0)
     {
         printf("FILE CANNOT OPEN\n");
@@ -68,7 +70,7 @@ int Fileopen()
     }
     else
     {
-        printf("FILE WAS OPENED\n");
+        //printf("FILE WAS OPENED\n");
         return fd;
     }      
 }
@@ -83,24 +85,18 @@ int Fileoffset(int fd, int offset)
     }
     else
     {
-        printf("FILE WAS OFFSET\n");
+        //printf("FILE WAS OFFSET\n");
         return fOffset;
     }
 }
 
 void Fileread(int fd, void *ptr, size_t count)
 {
-    read(fd, ptr, count);   //count-1????
-    //return ptr;
+    read(fd, ptr, count);
 }
 
 void BSprint(BootSector *ptr)
 {
-    // for (int i = 0; i<sizeof(BootSector); i++)
-    // {
-    //     printf("%s", ptr[i]);
-    // }
-
     printf("BytsPerSec: %i\n", ptr ->BPB_BytsPerSec);
     printf("SecPerClus: %i\n", ptr ->BPB_SecPerClus);
     printf("RsvdSecCnt: %i\n", ptr ->BPB_RsvdSecCnt); //number of reserved sectors
@@ -120,23 +116,20 @@ void BSprint(BootSector *ptr)
 
 void RDprint(EntryInDirectory *ptr)
 {
-    if (ptr->DIR_Name[0] == 0)
+    if (ptr->DIR_Name[0] != 0 && ptr->DIR_Attr != 0x0F)
     {
-        printf("No further valid entries");
+        printf("First cluster: %-8u|   ", ptr->DIR_FstClusLO);
+        printf("Time modified: %02u:%02u:%02u   |   ", (ptr ->DIR_WrtTime >> 11) & 0x1F, (ptr->DIR_WrtTime >> 5) & 0x3F, (ptr->DIR_WrtTime & 0x1F) * 2);
+        printf("Date modified: %4u-%02u-%02u    |   ", 1980+((ptr -> DIR_WrtDate >> 9) & 0x7F), (ptr -> DIR_WrtDate >> 5) & 0x0F, ptr ->DIR_WrtDate & 0x1F);   
+        printf("ADVSHR: %s%s%s%s%s%s            |   ", ptr->DIR_Attr & 0x20 ? "A" : "-", ptr->DIR_Attr & 0x10 ? "D" : "-", ptr->DIR_Attr & 0x08 ? "V" : "-", ptr->DIR_Attr & 0x04 ? "S" : "-", ptr->DIR_Attr & 0x02 ? "H" : "-", ptr->DIR_Attr & 0x01 ? "R" : "-");
+        printf("File Size: %-12u   |   ", ptr->DIR_FileSize);
+        printf("%s\n", ptr ->DIR_Name);
     }
-    else if (ptr->DIR_Name[0] == 0xE5)
-    {
-        printf("Specific entry is currently unused and should be ignored, perhaps due to deleted file");
-    }
-    else if(ptr->DIR_Attr)
-    {
-        printf("boopy");
-    }
-    else 
-    {
-        printf("%i\n", ptr ->DIR_FileSize);
-        printf("splooge");
-    }
+}
+
+void Fileprint(char *ptr)
+{
+    printf("%s", ptr);
 }
 
 int Fileclose(int fd)
@@ -151,10 +144,6 @@ int main()
 {
     //OPEN
     int fd = Fileopen();
-
-    //OFFSET
-    //int offset = 3; //change value to change offset
-    //int foffset = Fileoffset(fd, offset);
 
     //READ
     BootSector* bp = malloc(sizeof(BootSector));
@@ -173,7 +162,8 @@ int main()
     int ess = 0;
     while (ess == 0)
     {
-        printf("Enter an integer: ");
+        printf("\n");
+        printf("Enter starting cluster: ");
         scanf("%i", &startsize);
         if (startsize >= 0xFFF8)
         {
@@ -189,18 +179,6 @@ int main()
     uint16_t fat[fatsize];
     Fileread(fd, fat, fatsize);
 
-    uint16_t ent = 0;
-
-    for (int i=0; i<fatsize; i++)
-    {
-        if (fat[i] == startsize)
-        {
-            ent = i;
-            //printf("%i\n", ent);
-            break;
-        }
-    }
-
     uint16_t sz = startsize;
 
     while(fat[sz] < 0xFFF8)
@@ -210,38 +188,44 @@ int main()
     }
 
     //ROOT DIRECTORY
-    uint16_t firstSectorRD = bp->BPB_RsvdSecCnt + bp->BPB_NumFATs * bp->BPB_FATSz16;
+    uint16_t firstSectorRD = (bp->BPB_RsvdSecCnt + (bp->BPB_NumFATs * bp->BPB_FATSz16)) * bp->BPB_BytsPerSec;
 
     EntryInDirectory* eid = malloc(sizeof(EntryInDirectory));
     size_t eidSize = sizeof(EntryInDirectory);
-    Fileread(fd, eid, eidSize);
     Fileoffset(fd, firstSectorRD);
-    
-    RDprint(eid);
+    printf("\n");
+    printf("First cluster:         |   Time modified:            |   Date modified:               |   File Attributes(ADVSHR):  |   File Size:                |   Filename:    \n");
+    printf("\n");
+    for(int i = 0; i < bp->BPB_RootEntCnt; i++)
+    {
+        Fileread(fd, eid, eidSize);
+        RDprint(eid);
+    }
 
+    //READ FILE
+    int ftp;
+    int fp = 0;
+    while (fp == 0)
+    {
+        printf("\n");
+        printf("Enter file cluster: ");
+        scanf("%i", &ftp);
 
+        char fileContent[bp->BPB_SecPerClus][bp->BPB_BytsPerSec];
+        uint16_t FSOC = ((bp->BPB_RsvdSecCnt + (bp->BPB_NumFATs * bp->BPB_FATSz16)) + (32 * bp->BPB_RootEntCnt + bp->BPB_BytsPerSec -1)/bp->BPB_BytsPerSec) + (ftp - 2) * bp->BPB_SecPerClus;
+        
+        for (int i = 0; i < bp->BPB_SecPerClus; i++)
+        {
+            Fileoffset(fd, (FSOC + i) * 512);
+            Fileread(fd, fileContent[i], 512);
+            Fileprint(fileContent[i]);
+        }
+    }
 
+    //OUTPUT LONG DIRECTORY ENTRY
+    LongDirectoryEntry* lde = malloc(sizeof(LongDirectoryEntry));
+    size_t ldeSize = sizeof(LongDirectoryEntry);
 
-
-
-
-
-
-
-
-
-    // printf("%li\n", firstSector);
-
-    // //uint16_t directory[malloc(sizeof(Directory))];
-    // EntryInDirectory dir[12];
-    // Fileread(fd, &dir, 12);
-    // for (int i=0; i<12; i++)
-    // {
-    //     printf("%i\n", dir->DIR_Attr);
-    // }
-    // int padding = 0x20;
-    
     //CLOSE
     Fileclose(fd);
 }
-
